@@ -1,0 +1,951 @@
+---
+title: "Project2"
+author: "Cavin D'Souza" 
+date: "2023-10-22"
+output: html_document
+---
+## Project Partners : 
+## Vinayak Kumar GUPTA(24066272) = 50% of All Tasks
+## Cavin D'SOUZA (24066497) = 50% of All Tasks
+
+Youtube Link - https://youtu.be/DRL00VULpmk
+
+
+Objective - To evaluate the interdependencies between subscribers' count and various dataset variables within the context of a YouTube dataset, and subsequently categorize them into two distinct groups: high-subscribers and low-subscribers.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ggthemes)
+library(dplyr)
+library(caret)
+library(FSelector)
+library(xtable)
+library(crayon)
+library(ROCR)
+library(gridExtra)
+library(ROCit)
+library(caTools)
+library(rpart)
+library(rpart.plot)
+library(pROC)
+library(tree)
+library(cluster)
+library(ape)
+library(factoextra)
+library(lime)
+library(DALEX)
+
+
+```
+
+
+Importing the given dataset for the data analysis. Analysing the dataset in order to find out any kind of discrepancies such as missing values or NA values.
+
+```{r}
+
+given_dataset <- read.csv("E:/UWA Semester 2/Computational Data Analysis/Lab Notes/Global YouTube Statistics.csv",
+                          header = T, stringsAsFactors = T)
+
+
+summary(given_dataset)
+
+missing_values <- colSums(is.na(given_dataset))
+
+
+
+
+```
+After the analysis through the summary() function we realise that the given dataset consists of many missing values along with NA values. Based on this we employ various kinds of cleaning methods in order to achieve a unifrom dataset throughout.
+
+```{r}
+
+# Cleaning of Dataset
+
+mode_category <- as.character(names(sort(table(given_dataset$category), decreasing = TRUE)[1]))
+
+clean_dataset <- given_dataset%>%
+  mutate(category = ifelse(category == "nan", mode_category, as.character(category))) %>%
+  mutate(category = factor(category))
+
+mode_channel_type <- as.character(names(sort(table(clean_dataset$channel_type), decreasing = TRUE)[1]))
+
+clean_dataset <- clean_dataset%>%
+  mutate(channel_type = ifelse(channel_type == "nan", mode_channel_type, as.character(channel_type))) %>%
+  mutate(channel_type = factor(channel_type))
+
+
+mode_country <- as.character(names(sort(table(clean_dataset$Country), decreasing = TRUE)[1]))
+
+clean_dataset <- clean_dataset %>%
+  mutate(Country = ifelse(Country == "nan", mode_country, as.character(Country))) %>%
+  mutate(Country = factor(Country))
+
+mode_abbreviation <- as.character(names(sort(table(clean_dataset$Abbreviation), decreasing = TRUE)[1]))
+  
+  clean_dataset <- clean_dataset %>%
+  mutate(Abbreviation = ifelse(Abbreviation == "nan", mode_abbreviation, as.character(Abbreviation))) %>%
+  mutate(Abbreviation = factor(Abbreviation))
+ 
+clean_dataset$Population[is.na(clean_dataset$Population)] <- median(clean_dataset$Population, na.rm = TRUE)
+
+clean_dataset$Urban_population[is.na(clean_dataset$Urban_population)] <- median(clean_dataset$Urban_population, na.rm = TRUE) 
+  
+clean_dataset$Unemployment.rate[is.na(clean_dataset$Unemployment.rate)] <- median(clean_dataset$Unemployment.rate, na.rm = TRUE)
+
+clean_dataset$created_date[is.na(clean_dataset$created_date)] <- median(clean_dataset$created_date, na.rm = TRUE)
+
+clean_dataset$Latitude[is.na(clean_dataset$Latitude)] <- median(clean_dataset$Latitude, na.rm = TRUE)
+
+clean_dataset$Longitude[is.na(clean_dataset$Longitude)] <- median(clean_dataset$Longitude, na.rm = TRUE)
+
+clean_dataset$Gross.tertiary.education.enrollment....[is.na(clean_dataset$Gross.tertiary.education.enrollment....)] <- median(clean_dataset$Gross.tertiary.education.enrollment...., na.rm = TRUE)
+
+
+clean_dataset$uploads[clean_dataset$uploads == 0 ] <- median(clean_dataset$uploads)
+
+clean_dataset$video.views[clean_dataset$video.views == 0 ] <- median(clean_dataset$video.views)
+
+clean_dataset$video_views_for_the_last_30_days[is.na(clean_dataset$video_views_for_the_last_30_days)] <- median(clean_dataset$video_views_for_the_last_30_days, na.rm = TRUE)
+
+clean_dataset$subscribers_for_last_30_days[is.na(clean_dataset$subscribers_for_last_30_days)] <- median(clean_dataset$subscribers_for_last_30_days, na.rm = TRUE)
+
+clean_dataset$created_year[is.na(clean_dataset$created_year)] <- 2005
+clean_dataset <-  clean_dataset[ clean_dataset$created_year >= 2005 ,  ]
+
+summary(clean_dataset)
+
+
+```
+
+
+In the Data pre processing step for the proposed classification techniques we have eliminated few of the categorical and character string columns from the dataset since they have unique values in each row and does not contribute much to the efficiency of classification. Further we are employing a binary classification for the response variable 'subscribers' to new binary response variable as 'subscribers count' with responses 'High' and 'Low'in order to process the classification techniques on it with respect to the other features or explanatory variables present in the given data frame.
+
+```{r}
+final_predictors_dataset <- subset(clean_dataset, select =
+                                -c(rank,
+                                   Youtuber,
+                                   Abbreviation,
+                                   video_views_rank
+                                   ,country_rank
+                                   ,channel_type_rank
+                                   ,lowest_monthly_earnings
+                                   ,highest_monthly_earnings
+                                   ,created_date
+                                   ,created_month,
+                                   Latitude,
+                                   Longitude))
+
+
+# write.csv(final_predictors_dataset_, "new_clean_dataset.csv", row.names = FALSE)
+
+
+threshold <- median(final_predictors_dataset$subscribers)
+
+
+final_predictors_dataset$subscribers_count <- ifelse(final_predictors_dataset$subscribers >= threshold , "High", "Low")
+
+# final_predictors_dataset$subscribers_count <- ifelse(final_predictors_dataset$subscribers >= threshold, 1, 0)
+
+```
+
+
+From the list of categorical and numerical columns present in the data frame we did find few of the promising variables by employing  features selection techniques such as 'Correaltiobn Matrix' and 'Information Gain' so as to obtain final features variable which shall be used for model making using the machine learning classification methods.
+
+```{r}
+
+
+# Features Selection
+
+# Feature Selection Method 1
+    categorical_features <- final_predictors_dataset[, c( "Title",
+                                                                    "subscribers_count",
+                                                                    "category",
+                                                                    "Country",
+                                                                    "channel_type",
+                                                                    "created_year")]
+
+    info_gain <- information.gain(subscribers_count ~ ., data = categorical_features)
+
+
+# Feature Selection Method 2 
+    
+    
+        numerical_features <- final_predictors_dataset[, c( "subscribers",
+                                                            "video.views",
+                                                            "uploads",
+                                                             "highest_yearly_earnings",
+                                                            "lowest_yearly_earnings",
+                                                            "video_views_for_the_last_30_days",
+                                                             "Gross.tertiary.education.enrollment....",
+                                                             "Population",
+                                                            "Unemployment.rate",
+                                                            "Urban_population")]
+        
+        
+    correlation_matrix <- cor(numerical_features)
+    
+    correlation_table <- xtable(correlation_matrix)
+
+
+```
+
+
+After using feature selection techniques we still find some insignificant variables with respect to response variable which does not contribute to the training and testing of the the further models to be made. 
+
+```{r , echo=FALSE}
+#Based on Feature Selection removal of non significant variables
+
+final_dataset_classification <- subset(final_predictors_dataset, select =
+                                -c(Gross.tertiary.education.enrollment....,
+                                   Unemployment.rate,
+                                   created_year))
+```
+
+
+Finally after obtaining  our categorical and numerical features which are the foundation stone for the single variable and multi-variable classification methods. We proceed with the partitioning of  the features set into training, testing and calibration set for the reasoning that the given dataset has possibly large number of variables many of which have a large number of possible levels.Moreover AUC measure alone is not resistant to over-fitting thus employing the approach of three way splitting.
+Most of the model making makes use of the Training set while Test set is reserved for final analysis of model and the calibration set is used to simulate the unseen test during modelling along with to estimate over-fitting.
+
+
+
+```{r , echo=FALSE}
+obtained_features_numerical<- c("video.views",
+                                "highest_yearly_earnings",
+                                "video_views_for_the_last_30_days",
+                                "subscribers_for_last_30_days",
+                                "lowest_yearly_earnings",
+                                "Population",
+                                "Urban_population",
+                                "uploads")
+
+obtained_features_categorical<- c("Title",
+                                  "category",
+                                  "channel_type",
+                                  "Country")
+
+obtained_feature_variables <- c(obtained_features_numerical,
+                                obtained_features_categorical)
+
+
+
+outcome <- 'subscribers_count'
+
+pos <- 'High'
+
+set.seed(123)
+
+training_test_split <- createDataPartition(final_dataset_classification$subscribers_count, p = 0.8, list = FALSE)
+
+ 
+
+# Create the training set and the test set
+training_set <- final_dataset_classification[training_test_split, ]
+
+test_set <- final_dataset_classification[-training_test_split, ]
+
+ 
+
+# Further split the training set into a 90% training subset and a 10% calibration subset
+training_calibration_split <- createDataPartition(training_set$subscribers_count, p = 0.8, list = FALSE)
+
+ 
+
+# Create the training subset and the calibration subset
+training_subset <- training_set[training_calibration_split, ]
+calibration_subset <- training_set[-training_calibration_split, ]
+
+ 
+
+cat_Vars <- obtained_feature_variables[sapply(training_subset[,obtained_feature_variables], class) %in% c('factor','character')]
+
+numeric_Vars <- obtained_feature_variables[sapply(training_subset[,obtained_feature_variables], class) %in% c('numeric','integer')]
+
+
+```
+
+###Single Varaible Classification
+Here we are employing single variable classification method with the sole purpose of using features variables independently to explain  the Response variable. The Below function is meant for prediction of response variable with respect to categorical variables obtained from features/ attributes selection.
+
+
+```{r , echo=FALSE}
+Prediction_Cat <- function(Response_var, Predictor_var, Target_cat_var) {
+  Proportion_positive_outcome <- sum(Response_var == pos) / length(Response_var)
+  NA_Cont_Table <- table(as.factor(Response_var[is.na(Predictor_var)]))
+  NA_Probability_Positive_outcome <- (NA_Cont_Table/sum(NA_Cont_Table))[pos]
+  Cont_Table <- table(as.factor(Response_var), Predictor_var)
+  Probability_Positive_outcome <- (Cont_Table[pos,]+1.0e-3*Proportion_positive_outcome)/(colSums(Cont_Table)+1.0e-3)
+  Pred <- Probability_Positive_outcome[Target_cat_var]
+  Pred[is.na(Target_cat_var)] <- NA_Probability_Positive_outcome
+  Pred[is.na(Pred)] <- Proportion_positive_outcome
+  Pred
+  
+}
+
+
+for (cat in cat_Vars) {
+  Pred_Cat <- paste('pred', cat, sep='')
+  training_subset[,Pred_Cat] <- Prediction_Cat(training_subset[,outcome], 
+                                                training_subset[,cat], training_subset[,cat])
+  
+  calibration_subset[,Pred_Cat] <- Prediction_Cat(training_subset[,outcome], 
+                                                  training_subset[,cat], calibration_subset[,cat])
+  
+  test_set[,Pred_Cat] <- Prediction_Cat(training_subset[,outcome],
+                                          training_subset[,cat], test_set[,cat])
+  
+}
+```
+
+
+The below function as the name suggests is used for predicting response variable with regards to numerical variables obtained from the features selection techniques.
+
+```{r , echo=FALSE}
+Prediction_Num <- function(Response_var, Predictor_var, Target_cat_var) {
+  
+  calculate_quantiles <- unique(as.numeric(
+    quantile(Predictor_var, probs=seq(0, 1, 0.1), na.rm=T)))
+  
+  categorize_predictor_variable <- cut(Predictor_var, calculate_quantiles)
+  categorize_Target_variable <- cut(Target_cat_var, calculate_quantiles)
+  Prediction_Cat(Response_var, Predictor_var, Target_cat_var)
+}
+
+
+for (num in numeric_Vars) {
+  Pred_num <- paste('pred', num, sep='')
+  training_subset[,Pred_num] <- Prediction_Num(training_subset[,outcome],
+                                               training_subset[,num],
+                                               training_subset[,num])
+  
+  test_set[,Pred_num] <- Prediction_Num(training_subset[,outcome],
+                                        training_subset[,num],
+                                        test_set[,num])
+  
+  calibration_subset[,Pred_num] <- Prediction_Num(training_subset[,outcome],
+                                            training_subset[,num], 
+                                            calibration_subset[,num])
+}
+```
+
+The Below function is a pivotal function as it acts a performance measure for the model which is constructed for the categorical and numerical features.
+
+```{r , echo=FALSE}
+
+
+calc_AUC <- function(Predicted_value, Response_var) {
+  Prediction_perf <- performance(prediction(Predicted_value, Response_var), 'auc')
+  as.numeric(Prediction_perf@y.values)
+}
+
+```
+
+Over here we are finding out the auc values for the predictor variables specifically of categorical ones.
+we find out that the generated auc values for the mode focusing on categorical features turns out to be an adequate discriminant in order to determine relationship between the categorical features independently with the response variable. 
+```{r , echo=FALSE}
+for (cat in cat_Vars) {
+  Pred_Cat <- paste('pred', cat, sep='')
+  print(Pred_Cat)  # Check the value of 'Pred_Cat'
+  
+  if (Pred_Cat %in% colnames(training_subset)) {
+    auc_Train <- calc_AUC(training_subset[, Pred_Cat], training_subset[, outcome])
+    if (auc_Train >= 0.3) {
+      auc_Cal <- calc_AUC(calibration_subset[, Pred_Cat], calibration_subset[, outcome])
+      print(sprintf("%s: trainAUC: %4.3f ; calibrationAUC: %4.3f", Pred_Cat, auc_Train, auc_Cal))
+    }
+  } 
+}
+```
+ Over here too we are focusing on finding out the auc values for the numerical features and discover that the auc values for the numeric features model is slightly better than categorical features model using th single varaiate classification method
+
+```{r , echo=FALSE}
+
+
+for (num in numeric_Vars) {
+  Pred_num<-paste('pred',num,sep='') 
+  print(Pred_num)  
+  
+  if (Pred_num %in% colnames(training_subset)) {
+    auc_Train <- calc_AUC(training_subset[, Pred_num], training_subset[, outcome])
+    if (auc_Train >= 0.4) {
+      auc_Cal <- calc_AUC(calibration_subset[, Pred_num], calibration_subset[, outcome])
+      print(sprintf("%s: trainAUC: %4.3f ; calibrationAUC: %4.3f", Pred_num, auc_Train, auc_Cal))
+    }
+  } 
+}
+
+
+
+```
+
+We are plotting the density AUC plots for few of the categorical features in order to determine how the categorical features independently determines the response variable(subscribers count) and how do they contribute to its significance.
+```{r}
+         str(factor(training_subset[,"Country"]))
+         str(factor(training_subset[,"category"]))
+        
+        fig1 <- ggplot(calibration_subset) + geom_density(aes(x=predCountry, color=as.factor(subscribers_count)))
+        fig2 <- ggplot(calibration_subset) + geom_density(aes(x=predcategory, color=as.factor(subscribers_count)))
+        grid.arrange(fig1, fig2, ncol=1)
+
+```
+ Finally we are plotting the ROC values of each and every categorical variable in order to understand the fitting of the model and we come to come a conclusion that overall the model does fit and there is no over-fitting of the model occurring.
+
+
+```{r}
+
+plot_roc <- function(Predicted_value, Response_var, colour_id=2, overlaid=F) {
+ROCit_obj <- rocit(score=Predicted_value, class=Response_var==pos)
+par(new=overlaid)
+plot(ROCit_obj, col = c(colour_id, 1),
+legend = FALSE, YIndex = FALSE, values = FALSE)
+}
+plot_roc(calibration_subset$predCountry, calibration_subset[,outcome]) 
+plot_roc(calibration_subset$predcategory, calibration_subset[,outcome], colour_id=3, overlaid=T) 
+
+
+```
+
+
+
+Similarly, We are plotting the density AUC plots for few of the numerical features in order to determine how the numerical features independently determine the response variable(subscribers count) and how do they contribute to its significance.
+
+```{r}
+
+calc_AUC(training_subset[,"predvideo_views_for_the_last_30_days"], training_subset[,outcome]);calc_AUC(calibration_subset[,"predvideo_views_for_the_last_30_days"], calibration_subset[,outcome])
+
+fig1 <- ggplot(calibration_subset) + geom_density(aes(x=predvideo_views_for_the_last_30_days, color=as.factor(subscribers_count)))
+
+fig2 <- ggplot(calibration_subset) + geom_density(aes(x=preduploads, color=as.factor(subscribers_count)))
+grid.arrange(fig1, fig2, ncol=1)
+
+
+
+```
+
+Finally we are plotting the ROC values of each and every  Numerical variable in order to understand the fitting of the model and we come to come a conclusion that overall the model does fit and there is no over-fitting of the model occurring.
+
+```{r}
+
+plot_roc <- function(Predicted_value, Response_var, colour_id=2, overlaid=F) {
+ROCit_obj <- rocit(score=Predicted_value, class=Response_var==pos)
+par(new=overlaid)
+plot(ROCit_obj, col = c(colour_id, 1),
+legend = FALSE, YIndex = FALSE, values = FALSE)
+}
+
+plot_roc(test_set$predvideo_views_for_the_last_30_days, test_set[,outcome]) #red
+plot_roc(test_set$preduploads, test_set[,outcome], colour_id=3, overlaid=T) #green
+plot_roc(test_set$predhighest_yearly_earnings, test_set[,outcome], colour_id=4, overlaid=T) #blue
+
+
+```
+
+
+
+Finally dividing the  combination of obtained numerical and categorical features into two sets of dataframes for the Multi-Variable classification methods.
+
+```{r}
+features_set_1 <- final_dataset_classification[, c( "video_views_for_the_last_30_days",
+                                                "highest_yearly_earnings",
+                                                "Country",
+                                                "Population",
+                                                "channel_type",
+                                                "subscribers_count"
+                                                )]
+
+
+
+features_set_2 <- final_dataset_classification[, c( "Title",
+                                                "uploads",
+                                                "video.views",
+                                                "category",
+                                                "Urban_population",
+                                                "lowest_yearly_earnings",
+                                                "subscribers_count"
+                                                )]
+
+
+# write.csv(features_set_1, "features_set_1.csv", row.names = FALSE)
+# 
+# write.csv(features_set_2, "features_set_2.csv", row.names = FALSE)
+
+
+```
+
+
+### Decision Trees
+
+For Multi-Variate Classification we are employing Decision trees to make models. For model making purpose we are employing three way splitting in order to avoid overfitting and in the case of decision tress the model is being trained on the trained part of dataset, while the test set is reserved for the predictions and the calibration set is used for simulating the unaccounted cases.The models on the decision tree are further elaborated along with their performance measures.
+
+```{r}
+
+
+set.seed(123)  # For reproducibility, we used random seed value
+
+training_test_split_dt <- createDataPartition(features_set_1$subscribers_count, p = 0.8, list = FALSE)
+
+
+# Create the training set and the test set
+training_set_dt <- features_set_1[training_test_split_dt, ]
+
+test_set_dt <- features_set_1[-training_test_split_dt, ]
+
+
+training_calibration_split_dt <- createDataPartition(training_set_dt$subscribers_count, p = 0.8, list = FALSE)
+
+training_subset_dt <- training_set_dt[training_calibration_split_dt, ]
+calibration_subset_dt <- training_set_dt[-training_calibration_split_dt, ]
+
+
+formula <-features_set_1$subscribers_count ~ features_set_1$channel_type + features_set_1$video_views_for_the_last_30_days +  features_set_1$highest_yearly_earnings + features_set_1$Population
+
+dt_model <- rpart(formula, data = features_set_1)
+summary(dt_model)
+
+
+set.seed(123)
+
+training_test_split_dt2 <- createDataPartition(features_set_2$subscribers_count, p = 0.8, list = FALSE)
+ 
+
+# Create the training set and the test set
+training_set_dt2 <- features_set_2[training_test_split_dt2, ]
+
+test_set_dt2 <- features_set_2[-training_test_split_dt2, ]
+
+
+training_calibration_split_dt2 <- createDataPartition(training_set_dt2$subscribers_count, p = 0.8, list = FALSE)
+
+training_subset_dt2 <- training_set_dt2[training_calibration_split_dt2, ]
+calibration_subset_dt2 <- training_set_dt2[-training_calibration_split_dt2, ]
+
+
+formula <-features_set_2$subscribers_count ~ features_set_2$video.views + features_set_2$category + features_set_2$ Urban_population + features_set_2$lowest_yearly_earnings
+
+dt_model2 <- rpart(formula, data = features_set_2)
+summary(dt_model2)
+
+
+
+
+
+```
+We have taken two models , employing decision tree which is dt_model and dt_model2.
+The dt_model2 takes account of more promising features variables which determine the response variable while the dt_model takes only few features variables into consideration though easy to interpret but cannot account or justify the effect on response variable.
+
+The model correctly predicted "High" 76 times, but it incorrectly predicted "High" when the actual class was "Low" 49 times.The model's accuracy is approximately 58.39%, meaning it correctly classified about 58.39% of the instances.
+Kappa measures the model's performance while accounting for chance agreement. A Kappa of 0.1696 suggests that the model's performance is better than what could be expected by random chance, but it is not very high.Sensitivity and Sensitivity (True Positive Rate) measures the ability of the model to correctly identify "High" instances, while Specificity (True Negative Rate) measures the ability to correctly identify "Low" instances. Sensitivity is 50.33%, and Specificity is 66.67%.Positive Predictive Value (PPV): PPV represents the probability that an observation is truly "High" when the model predicts "High." In our case, it's approximately 60.80%.From the below decision tree , we come to a conclusion that video_views_for_the_last_30_days greater than 101e + 6 and people with highest yearly earnings less than 23 million have a huge effect on the subscribers of the respective you tubers thus clearly indicating that these two feature variables highly effects  the response variable which is subscribers count in our case. 
+
+
+```{r}
+set.seed(123)  # for reproducibility
+
+ 
+
+train_indices_dt <- createDataPartition( features_set_1$subscribers_count, p = 0.7, list = FALSE)
+training_data_dt <- features_set_1[train_indices_dt, ]
+testing_data_dt <- features_set_1[-train_indices_dt, ]
+tree_model <- rpart(subscribers_count ~ ., data = training_data_dt, method = "class")
+par(cex=1.0)
+rpart.plot(dt_model)
+
+# Make predictions on the testing data
+
+training_levels_dt <- levels(training_data_dt$Country)
+testing_data_dt$Country <- factor(testing_data_dt$Country, levels = training_levels_dt)
+predictions_dt <- predict(tree_model, testing_data_dt, type = "class")
+
+
+# Create a confusion matrix
+levels(predictions_dt)
+levels(testing_data_dt$subscribers_count)
+levels_to_use_dt <- union(levels(predictions_dt), levels(testing_data_dt$subscribers_count))
+predictions_dt <- factor(predictions_dt, levels = levels_to_use_dt)
+testing_data_dt$subscribers_count <- factor(testing_data_dt$subscribers_count, levels = levels_to_use_dt)
+confusion_matrix_dt <- confusionMatrix(predictions_dt, testing_data_dt$subscribers_count)
+# Print the confusion matrix
+print(confusion_matrix_dt)
+
+  
+
+```
+The below dt_model2 we see that video views , categories , lowest_yearly_earnings act as a deciding parameters in the subscriber count. The you tuber subscribers count tends to be high in the categories like Entertainment, Gaming, Film and Animation. Looking from the decision tree the lowest earning you tubers , do manage to have high amount of subscribers when they are in the category of film and animation, how to and style.    
+
+```{r}
+
+ set.seed(123)  # for reproducibility
+train_indices_dt2 <- createDataPartition( features_set_2$subscribers_count, p = 0.7, list = FALSE)
+training_data_dt2 <- features_set_2[train_indices_dt2, ]
+testing_data_dt2 <- features_set_2[-train_indices_dt, ]# Train a decision tree model
+tree_model_2 <- rpart(subscribers_count ~ ., data = training_data_dt2, method = "class")
+
+par(cex=1.0)
+rpart.plot(dt_model2)
+
+
+# Make predictions on the testing data
+training_levels_dt2 <- levels(training_data_dt2$category)
+testing_data_dt2$Country <- factor(testing_data_dt2$category, levels = training_levels_dt2)
+predictions_dt2 <- predict(dt_model2, testing_data_dt2, type = "class")
+
+# Create a confusion matrix
+levels(predictions_dt2)
+levels(testing_data_dt2$subscribers_count)
+levels_to_use_dt2 <- union(levels(predictions_dt2), levels(testing_data_dt2$subscribers_count))
+predictions_dt2 <- factor(predictions_dt2, levels = levels_to_use_dt2)
+testing_data_dt2$subscribers_count <- factor(testing_data_dt2$subscribers_count, levels = levels_to_use_dt2)
+confusion_matrix_dt2 <- confusionMatrix(predictions_dt, testing_data_dt$subscribers_count)
+
+# Print the confusion matrix
+print(confusion_matrix_dt2)
+
+
+
+ 
+```
+
+
+
+
+The below plot tells us how effectively the model identifies high instances.On the x-axis, we find the specificity, which indicates the true negative rate, ranging from 1 to 0.0 implying that the model's ability to correctly classify negative instances with a specificity of 1 indicating accurate recognition all Low values and 0 implying they are all incorrectly labeled as positives.
+From the ROC value and plot the model's performance is just adequate but can be improved new splitting percentages of given data frames.
+
+
+```{r}
+
+# Generate ROC curve for Model 1
+roc_curve_dt <- roc(testing_data_dt$subscribers_count, as.numeric(predictions_dt))
+
+# Calculate AUC for Model 1
+auc_dt <- auc(roc_curve_dt)
+
+# Print AUC for Model 1
+cat("AUC for Model 1:", auc_dt, "\n")
+
+# Plot ROC curve for Model 1
+plot(roc_curve_dt, main = "ROC Curve for Model 1" , col = 'red')
+
+
+
+
+```
+
+### Logistic Regression
+for the logistic regression approach we are diving the dataset into two dataframes being combination of categorical and numerical variables. Along with that we are creating a binary response (subscribers_count = 1 and 0) for our target variable(subscribers) in order to estimate the probability of onw of the two binary outcomes.Logiistic regression models the relationship between the predictor variables and the probability of the binary outcome(subscribers_count in our case).
+
+
+```{r}
+features_set_1_LR <- final_dataset_classification[, c( "subscribers"
+                                                       ,"video_views_for_the_last_30_days",
+                                                "highest_yearly_earnings",
+                                                "Country",
+                                                "Population",
+                                                "channel_type"
+                                                
+                                                )]
+
+
+
+features_set_2_LR <- final_dataset_classification[, c("subscribers"
+                                                      ,"Title",
+                                                "uploads",
+                                                "video.views",
+                                                "category",
+                                                "Urban_population",
+                                                "lowest_yearly_earnings"
+                                                )]
+
+
+
+ 
+threshold_LR <- median(features_set_1_LR$subscribers)
+
+
+features_set_1_LR$subscribers_count <- ifelse(features_set_1_LR$subscribers >= threshold_LR , 1, 0)
+features_set_2_LR$subscribers_count <- ifelse(features_set_2_LR$subscribers >= threshold_LR , 1, 0)
+```
+
+
+Below are we able to achieve a model through the regression method and using the three way splitting for model fitting based on which we obtain the AUC values.The obtained AUC values are as follows:auc for training is 0.7975, auc for testing is 0.8289 and auc for calibration is 0.8145 indicating that the auc values for the model 'model_LR2' is of very good discrimination proving that it can significantly determine the response variable from the feature variables.
+
+```{r}
+model_LR2 <- glm( subscribers_count ~ uploads + video.views + category + Urban_population + lowest_yearly_earnings  , data = features_set_2_LR, family = binomial)
+
+summary(model_LR2)
+
+training_test_split_LR <- createDataPartition(features_set_2_LR$subscribers_count, p = 0.8, list = FALSE)
+# Create the training set and the test set
+training_set_LR <- features_set_2_LR[training_test_split_LR, ]
+test_set_LR <- features_set_2_LR[-training_test_split_LR, ]
+
+# Further split the training set into a 80% training subset and a 20% calibration subset
+training_calibration_split_LR <- createDataPartition(training_set_LR$subscribers_count, p = 0.8, list = FALSE)
+
+# Create the training subset and the calibration subset
+training_subset_LR <- training_set_LR[training_calibration_split_LR, ]
+
+calibration_subset_LR <- training_set_LR[-training_calibration_split_LR, ]
+
+ 
+# AUC for training subset
+predicted_train_LR <- predict(model_LR2, newdata = training_subset_LR, type = "response")
+roc_curve_train_LR <- roc(training_subset_LR$subscribers_count, predicted_train_LR)
+auc_value_train_LR <- auc(roc_curve_train_LR)
+print(auc_value_train_LR)
+
+ 
+
+# AUC for testing
+predicted_test_LR <- predict(model_LR2, newdata = test_set_LR , type = "response")
+roc_curve_test_LR <- roc(test_set_LR$subscribers_count, predicted_test_LR)
+auc_value_test_LR <- auc(roc_curve_test_LR)
+print(auc_value_test_LR)
+
+ 
+
+# AUC for calibration
+
+predicted_calibration_LR <- predict(model_LR2, newdata = calibration_subset_LR , type = "response")
+roc_curve_calibration_LR <- roc(calibration_subset_LR$subscribers_count, predicted_calibration_LR)
+auc_value_calibration_LR <- auc(roc_curve_calibration_LR)
+print(auc_value_calibration_LR)
+
+```
+
+ When model 2 is usd for logistic regression approach the generate auc values are as follows: auc for traing is 0.7029, auc for testing is 0.7223 and auc for calibration is 0.6432 indicating that the below model 'model_LR1' can fairly perform in determining the relationship between the response and feature variables.
+
+```{r}
+
+
+
+
+model_LR1 <- glm( subscribers_count ~ highest_yearly_earnings + video_views_for_the_last_30_days + Country + Population + channel_type  , data = features_set_1_LR , family = binomial)
+
+summary(model_LR1)
+
+
+training_test_split_LR2 <- createDataPartition(features_set_1_LR$subscribers_count, p = 0.8, list = FALSE)
+# Create the training set and the test set
+training_set_LR2 <- features_set_1_LR[training_test_split_LR2, ]
+test_set_LR2 <- features_set_1_LR[-training_test_split_LR2, ]
+# Further split the training set into a 80% training subset and a 20% calibration subset
+training_calibration_split_LR2 <- createDataPartition(training_set_LR2$subscribers_count, p = 0.8, list = FALSE)
+# Create the training subset and the calibration subset
+training_subset_LR2 <- training_set_LR2[training_calibration_split_LR2, ]
+calibration_subset_LR2 <- training_set_LR2[-training_calibration_split_LR2, ]
+
+# AUC for training subset
+
+predicted_train_LR2 <- predict(model_LR1, newdata = training_subset_LR2, type = "response")
+roc_curve_train_LR2 <- roc(training_subset_LR2$subscribers_count, predicted_train_LR2)
+auc_value_train_LR2 <- auc(roc_curve_train_LR2)
+print(auc_value_train_LR2)
+
+
+# AUC for testing
+
+predicted_test_LR2 <- predict(model_LR1, newdata = test_set_LR2 , type = "response")
+roc_curve_test_LR2 <- roc(test_set_LR2$subscribers_count, predicted_test_LR2)
+auc_value_test_LR2 <- auc(roc_curve_test_LR2)
+print(auc_value_test_LR2)
+
+
+
+# AUC for calibration
+
+predicted_calibration_LR2 <- predict(model_LR1, newdata = calibration_subset_LR2 , type = "response")
+roc_curve_calibration_LR2 <- roc(calibration_subset_LR2$subscribers_count, predicted_calibration_LR2)
+auc_value_calibration_LR2 <- auc(roc_curve_calibration_LR2)
+print(auc_value_calibration_LR2)
+
+ 
+```
+###ROC plots for Logistic regression Models
+ The Below plots for the 2 Models of Logistic regression clearly indicates that ROC curve is much better for the Model 'model_LR2' than the Model 'model_LR1' showcasing that 'model_LR2' has better overall discrimination ability. 
+
+```{r}
+
+# ROC Plots for Logistic Regression Models
+
+# AUC and ROC for model
+
+roc_model_LR <- roc(test_set_LR$subscribers_count, predicted_test_LR)
+auc_model_LR <- auc(roc_model_LR)
+
+# AUC and ROC for model2
+
+roc_model_LR2 <- roc(test_set_LR2$subscribers_count, predicted_test_LR2)
+auc_model_LR2 <- auc(roc_model_LR2)
+
+# Plot ROC curves for both models
+
+par(mfrow = c(1, 2))  # Set up a 1x2 grid for two plots side by side
+# ROC curve for 'model'
+plot(roc_model_LR, main = "ROC Curve - Model 1", col = "blue", lwd = 2)
+# ROC curve for 'model2'
+plot(roc_model_LR2, main = "ROC Curve - Model 2", col = "red", lwd = 2)
+# Add a diagonal reference line
+abline(a = 0, b = 1, lty = 2, col = "gray")
+# Add legends
+legend("bottomright", legend = paste("AUC =", round(auc_model_LR, 2)), col = "blue")
+legend("bottomright", legend = paste("AUC =", round(auc_model_LR2, 2)), col = "red")
+
+ 
+
+```
+
+
+```{r}
+
+# AUC Values plot for Logistic Regression Model1
+scenario_names_LR2 <- c("training_subset_LR2", "test_set_LR2", "calibration_subset_LR2")
+auc_values_LR2 <- c("predicted_probs_train_LR2", "predicted_probs_test_LR2", "predicted_probs_calibration_LR2")
+auc_data_LR2 <- data.frame(Scenario = scenario_names_LR2, AUC = auc_values_LR2)
+
+ggplot(auc_data_LR2, aes(x = Scenario, y = AUC)) +
+  geom_bar(stat = "identity", fill = "green") +
+  labs(x = "Scenario", y = "AUC Value") +
+  theme_minimal()
+```
+
+
+
+
+```{r}
+
+# AUC Values plot for Logistic Regression Model2
+scenario_names_LR1 <- c("training_subset_LR", "test_set_LR", "calibration_subset_LR")
+auc_values_LR1 <- c("predicted_probs_train_LR", "predicted_probs_test_LR", "predictded_probs_calibration_LR")
+auc_data_LR1 <- data.frame(Scenario = scenario_names_LR1, AUC = auc_values_LR1)
+
+ggplot(auc_data_LR1, aes(x = Scenario, y = AUC)) +
+  geom_bar(stat = "identity", fill = "red") +
+  labs(x = "Scenario", y = "AUC Value") +
+  theme_minimal()
+
+
+```
+A null model is a simple baseline model that serves as a reference point for comparing the performance of more complex models.  The null model is based on predicting the majority class in the "subscribers_count" variable. It calculates the majority class by finding the class (or category) that has the highest frequency in the "subscribers_count" variable using the table and which.max functions. The majority class represents the class that occurs most frequently in the dataset. The function then creates a vector of predictions (predictions_null) by repeating the name of the majority class for the entire length of the dataset. This means that for every observation in the dataset, the model predicts the majority class i.e. HIGH.
+
+```{r}
+null_model_majority_class <- function(final_dataset_classification) {
+majority_class <- which.max(table(final_dataset_classification$subscribers_count))
+predictions_null <- rep(names(table(final_dataset_classification$subscribers_count))[majority_class], nrow(final_dataset_classification))
+return(predictions_null)
+}
+null_predictions <- null_model_majority_class(final_dataset_classification)
+print(null_predictions[1:20])
+```
+
+### Clustering - Kmeans 
+
+Based on the k-means clustering, we have got the optimum numbers of clusters as 3. We only chose numerical variables in K-means clustering is primarily because the algorithm relies on the calculation of distances between data points. And categorical variables are not continuous. The clusters have varying sizes, with sizes being 532,105,23 observations.This suggests that the majority of the content creators fall into category of largest cluster.This cluster includes content creators with a wide range of subscriber counts, and it is quite diverse. Cluster with 23 observations have relatively lower subscriber counts.The second largest cluster with 105 observations. The content creators in this cluster appear to have moderate to high subscriber counts. In each of these clusters T-Series,Youtubemovies and Zee Music Company tops the list with highest number of subscribers in their own clusters respectively. But we see the same is not true for the video views , uploads, earnings but the categories are primarily music and animation. We hereby conclude that high subscribers tend to be towards those people who are in entertainment, music , gaming, films and animation industry. In addition to that population also played an important role in increasing subscribers. In countries where population is high subscribers are high. Such countries are India and United States.
+
+
+```{r}
+# We have set the number of rows we want to consider (660 i.e. 70% pf total rows)
+n <- 660
+
+ 
+
+# We Sampled the first 'n' rows from the dataset
+sampled_data <- final_dataset_classification[1:n, ]
+
+ 
+
+# We Defined the range of 'k' values we want to test
+k_values <- 2:10  
+
+ 
+
+# Initialized an empty vector to store the within-cluster sum of squares (WCSS) values
+wcss_values <- numeric(length(k_values))
+
+ 
+
+# Scale the selected columns
+scale_factor <- c(1000000, 1000000 , 1000 , 1000000 , 1000000 , 1000000 , 1000000)
+sampled_data$subscribers <- sampled_data$subscribers / scale_factor[1]
+sampled_data$video.views <- sampled_data$video.views / scale_factor[2]
+sampled_data$uploads <- sampled_data$uploads / scale_factor[3]
+sampled_data$lowest_yearly_earnings <- sampled_data$lowest_yearly_earnings / scale_factor[4]
+sampled_data$highest_yearly_earnings <- sampled_data$highest_yearly_earnings / scale_factor[5]
+sampled_data$Population <- sampled_data$Population / scale_factor[6]
+sampled_data$Urban_population <- sampled_data$Urban_population / scale_factor[7]
+
+ 
+# Perform k-means clustering for each value of 'k'
+for (i in seq_along(k_values)) {
+  k <- k_values[i]
+
+
+  # Selected the columns to cluster
+  cols_to_cluster <- c("video.views", "highest_yearly_earnings", "uploads", "Population", "lowest_yearly_earnings", "Urban_population" )
+
+ 
+
+  # Scaled the selected columns
+  scaled_data <- scale(sampled_data[, cols_to_cluster])
+
+ 
+
+  # Perform k-means clustering
+  kmeans_result <- kmeans(scaled_data, centers = k)
+
+ 
+
+  # Calculate the within-cluster sum of squares (WCSS)
+  wcss_values[i] <- kmeans_result$tot.withinss
+}
+
+ 
+
+# Plot the elbow graph to determine the optimal 'k'
+plot(k_values, wcss_values, type = "b", xlab = "Number of Clusters (k)", ylab = "WCSS")
+
+ 
+
+# Visual inspection is needed to determine the optimal 'k'
+
+ 
+
+# Once you've determined the optimal 'k', update the value for clustering
+optimal_k <- 3  # Change this to your determined optimal 'k'
+
+ 
+
+# Perform clustering with the optimal 'k' value
+cols_to_cluster <- c("video.views", "highest_yearly_earnings", "uploads", "Population", "lowest_yearly_earnings", "Urban_population")
+scaled_data <- scale(sampled_data[, cols_to_cluster])
+kmeans_result <- kmeans(scaled_data, centers = optimal_k)
+
+ 
+
+# Continue with the clustering analysis
+
+ 
+fviz_cluster(list(data = scaled_data, cluster = kmeans_result$cluster), geom = "point", show.clust.cent = FALSE)
+kbest.p <- 3
+
+
+kmClusters<-kmeans(scaled_data,kbest.p,nstart=100,iter.max=100)
+kmClusters$centers
+kmClusters$size
+cat("Totalofclustersizes=",sum(kmClusters$size))
+cat("Totalnumberofobservations=",nrow(final_dataset_classification))
+groups<-kmClusters$cluster
+
+for (cluster_id in unique(groups)) {
+  cat("Cluster ", cluster_id, " (Size: ", sum(groups == cluster_id), ")\n")
+  cluster_data <- final_dataset_classification[groups == cluster_id, ]
+  print(head(cluster_data))
+  cat("\n")
+}
+
+
+```
+References:
+Chatgpt. ChatGPT. (n.d.). https://openai.com/chatgpt
+
+
+
