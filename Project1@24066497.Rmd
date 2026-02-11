@@ -1,0 +1,321 @@
+---
+title: "Project 1
+24066497 Cavin D'Souza"
+output: html_document
+date: "2023-09-03"
+runtime: shiny
+---
+Video URL : https://youtu.be/eeDWuh7x5gk
+
+Loading of all the Libraries in order to use the functions for analysis of Data and plotting  respective visualizations to support the same.
+
+```{r, message=FALSE, warning=FALSE}
+
+library(tidyverse)
+
+library(tidyr)
+
+library(dplyr)
+
+library(mice)
+
+library(tidyselect)
+
+library(VIM)
+
+library(ggplot2)
+
+library(scales)
+
+```
+
+
+Loading the dataset for the purpose of Data Analysis.
+
+```{r,message=FALSE}
+given_dataset <- read.csv("E:/CDA R Codes/LABS/Global YouTube Statistics.csv")
+```
+ 
+Using head function which gives us the top 06 observations which in return helps us understand the nature of observations and sets the course for analysis.
+
+```{r , message=FALSE, warning=FALSE}
+head(given_dataset)
+```
+
+Summary over here is used as a tool for obtaining key information in terms of mathematical and statistical models which gives a deeper understanding of the data and how to deal with it.
+
+```{r , message=FALSE, warning=FALSE}
+summary(given_dataset)
+```
+
+str lets us know that there are 995 observations with 28 variables with most variable being of numeric type and few being of string type.
+
+```{r , message=FALSE, warning=FALSE}
+str(given_dataset)
+```
+
+Based on the summary, categorizing out the NA's(missing values)  of the 28 variables that we have to deal with and accordingly performing transformation to clean the given dataframe.
+
+```{r, message=FALSE, warning=FALSE}
+given_dataset %>% summarise_all(funs(sum(is.na(.))))
+
+
+#Mice process
+#Looking at the  missing data patterns
+
+
+ 
+
+# result <- md.pattern(given_dataset, colnames = TRUE)
+```
+the below chart shows us the missing values in terms of the pinks cells in the box of the respective variables
+
+```{r, message=FALSE, warning=FALSE}
+result <- md.pattern(given_dataset)
+
+# Add column names to the result
+result$colnames <- colnames(given_dataset)
+
+# Print the result
+print(result)
+```
+Plotting of Missing values in order to have a clarity of which variable in the data frame contribuyes the most of NA(Missing) Values.
+
+```{r, message=FALSE, warning=FALSE}
+aggr_plot <- aggr(given_dataset, col=c('navyblue','red'),
+                  numbers=TRUE,
+                  sortVars=TRUE,
+                  labels=names(given_dataset),
+                  cex.axis=0.35,
+                  gap=2,
+                  ylab=c("Histogram of Missing Data(Left Axis)","Frequency (Right Axis)"))
+
+
+
+
+
+
+clean_dataset <- given_dataset %>%
+  mutate(Country = ifelse(is.na(Country) | Country == "nan", "Unknown", Country))
+
+
+clean_dataset <- given_dataset %>%
+  mutate(category = ifelse(is.na(category) | category == "nan", "Unknown", category))
+  clean_dataset1 <- drop_na(given_dataset)
+
+
+```
+
+
+In the Below the Chart analysis is being conducted on the population targeting the urban crowd and coming to a conclusion and are they being distributed in the subscribers count.
+
+```{r, message=FALSE, warning=FALSE}
+ggplot(data = clean_dataset, aes(x = Urban_population)) +
+  geom_density(aes(fill = "blue"),
+               show.legend = F,
+               alpha = .5) +
+  labs(title = "Analysis of Urban population",
+       x = "Urban Population",
+       y = "Distribution Throuhout Subscribers")
+
+
+
+
+```
+
+In the below chart we are understanding the pattern of how earnings are affected by the number of uploads done by youtubers as uploads increases earning too shall increases. But most of the youtubers have done uploads in the range of 75-100 as most of the points are concentrated in that region. 
+
+```{r, message=FALSE, warning=FALSE}
+ggplot(data = clean_dataset,
+       mapping = aes(x=Population, y=Gross_tertiary_education_enrollment_Percentage)) +
+  geom_jitter(alpha=1/5, height = 0.1) +
+  geom_smooth() +
+  scale_x_log10(labels=dollar) +
+  labs(x="Earnings", y="Uploads",)
+```
+
+From the below box plot we can come to a conclusion that the Education enrollment is uniform throughout the urban population.Moreover the distribution is symmetric.
+```{r, message=FALSE, warning=FALSE}
+given_dataset %>%
+      drop_na(Gross_tertiary_education_enrollment_Percentage)%>%
+    ggplot(aes(x = Gross_tertiary_education_enrollment_Percentage)) +
+    geom_boxplot(show.legend = F,alpha = .5) +
+    labs(title = "Boxplot",x = "s")
+```
+
+In the given plot it is evident that Entertainment category has the most number of youtubers grouped in it followed by the Music category indicating the demand among the subscribers.
+It can also be inferred that due to increased demand among the populations more youtubers are inclined to join that industry. 
+
+```{r, message=FALSE, warning=FALSE}
+given_dataset %>%
+      drop_na(category) %>%
+      ggplot(aes(x = category)) +
+      geom_bar(stat = "count", alpha = 0.8) +
+      labs(title = "Barplot",x = "Categories",y = "Count")+
+       theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+From the below visualization it can be concluded that from the month the youtube channels were created all of them were consistent and uniform throughout the month in terms of the upload of videos on platform Youtube.
+
+```{r, message=FALSE, warning=FALSE}
+  
+
+library(ggridges)
+
+library(viridis)
+
+
+ggplot(given_dataset, aes(x = `uploads`, y = `created_month`, fill = ..x..)) +
+  geom_density_ridges_gradient(scale = 3, rel_min_height = 0.01, alpha = 5) +
+  scale_fill_viridis(name = "", option = "i") +
+  labs(title = 'Number Of Uploads Since Channel Created') +
+  theme_bw() +
+  theme(
+    legend.position = "none",
+    panel.spacing = unit(0.1, "lines"),
+    strip.text.x = element_text(size = 8)
+  )
+
+
+
+```
+The below plot shows a trend that with more number of subscribers the views on video tends to be more.It is evident that with lesser number of views the subscriber count too is less.
+
+```{r, message=FALSE, warning=FALSE}
+
+  clean_dataset1 <- clean_dataset1 %>%
+  mutate(newvideo_views = video_views / 1000000)
+
+   clean_dataset1 <- clean_dataset1 %>%
+  mutate(newsubscribers = subscribers/1000000)
+
+  
+  ggplot(clean_dataset1, aes(x= newvideo_views, y=newsubscribers)) + 
+  geom_hex(bins = 30 ) +
+  geom_smooth(color="lightblue", se=F)+
+    labs(title = "Subscribers VS Views",x = "Views on Videos",y = "Subcribers Base ")
+
+
+
+```
+
+In the below analysis video views for the duration of 30 days we can observe a trend that the views were the most in the starting few days and by the end the views of videos kept on diminishing to an extent that there are no views consistenetly after the termination of staring days 
+
+```{r, message=FALSE, warning=FALSE}
+  ggplot(clean_dataset1,aes(x = video_views_for_the_last_30_days, y = 10)) +
+  geom_violin(aes(fill = "blue"),show.legend = F,alpha = .5)+
+  labs(title = "Violin plot",x = "Views Earned in 30 Days")
+```
+
+
+### Shiny Web Application
+
+
+```{r , message=FALSE, warning=FALSE}
+
+
+
+
+library(shiny)
+
+library(shinyWidgets)
+
+library(ggplot2)
+
+
+
+
+
+# Define UI for application that draws a histogram
+ui <- fluidPage(
+
+    # Application title
+    titlePanel("Computational Data Analysis"),
+
+    # Sidebar with a slider input for number of bins 
+    sidebarLayout(
+        sidebarPanel(
+          selectInput("plot_type", "Select plot type:", choices = c("Scatter Plot",
+            "Horizontal Bar Plot")),
+          
+                 conditionalPanel(
+            condition = "input.plot_type == 'Horizontal Bar Plot'"
+          ),
+          
+           conditionalPanel(
+            condition = "input.plot_type == 'Scatter Plot'"
+            
+          ),
+          
+        #   conditionalPanel(
+        #     condition = "input.plot_type == 'Hex Bin Plot'"
+        # )
+        ),
+
+        # Show a plot of the generated distribution
+        mainPanel(
+           plotOutput("distPlot")
+        )
+    )
+)
+
+# Define server logic required to draw a histogram
+server <- function(input, output) {
+
+    output$distPlot <- renderPlot({
+           if (input$plot_type == "Horizontal Bar Plot") {
+             
+             
+  clean_dataset1 <- clean_dataset1 %>%
+  mutate(highest_yearly_earnings_millions = highest_yearly_earnings / 10000000)
+
+  ggplot(clean_dataset1, aes(x = highest_yearly_earnings_millions, y = category)) +
+  geom_bar(stat = "identity", fill = "lightblue") +
+  labs(x = "Earnings (Millions)", y = "Category", title = "Category Earnings") +
+  theme_minimal() +
+  theme(
+    axis.title.x = element_text(family = "Arial", size = 12, color = "red"),
+    axis.title.y = element_text(family = "Times New Roman", size = 14, color = "blue"),
+    plot.title = element_text(family = "Arial", size = 16, face = "bold", color = "purple"),
+    axis.text = element_text(size = 10, color = "black")
+  )
+           }#End of Horizontal Bar Plot
+      
+      
+      else if(input$plot_type == "Scatter Plot") {
+        
+        ggplot(data = clean_dataset1,
+       mapping = aes(x=subscribers_for_last_30_days, y=video_views_for_the_last_30_days)) +
+   geom_point(color = "black", size = 1, alpha = 0.9) +
+  geom_smooth(color = "red") +
+  scale_x_log10(labels=dollar) +
+  labs(x="Subscribers count for last 30 Days", y="Viies in videos for last 30 Days",title = "Subcribers vs View (For 30 Days)")
+      }# End of Scatter plot
+      
+ #      else if (input$plot_type == "Hex Bin Plot")
+ # {
+ #         clean_dataset1 <- clean_dataset1 %>%
+ #           mutate(newvideo_views = video_views / 1000000)
+ #         
+ #         clean_dataset1 <- clean_dataset1 %>%
+ #           mutate(newsubscribers = subscribers/1000000)
+ #         ggplot(clean_dataset1, aes(x= newvideo_views, y=newsubscribers)) + 
+ #           geom_hex(bins = 30 ) +
+ #           geom_smooth(color="lightblue", se=F)+
+ #           labs(title = "Subscribers VS Views",x = "Views on Videos",y = "Subcribers Base ")
+ #        
+ #  }
+}#End of Output
+  )#End of Output
+    
+}#End OF Server
+
+# Run the application 
+shinyApp(ui = ui, server = server)
+
+
+```
+
+Refefences:
+
+Chatgpt. ChatGPT. (n.d.). https://openai.com/chatgpt  
